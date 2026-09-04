@@ -27,21 +27,21 @@
         "FTr"
     ],
     "dropped_by_filter": [
-        "BLK%",
-        "STL",
-        "TOV",
+        "FG",
         "TS%",
-        "FT",
         "3PAr",
-        "DRtg",
-        "DRB%",
-        "FTr",
-        "3P%",
-        "TOV%",
-        "AST%",
+        "STL",
         "eFG%",
+        "3P%",
+        "DRB%",
+        "TOV",
+        "FTr",
+        "AST%",
         "TRB%",
-        "FG"
+        "FT",
+        "DRtg",
+        "TOV%",
+        "BLK%"
     ],
     "remaining_after_filter": [
         "ORtg",
