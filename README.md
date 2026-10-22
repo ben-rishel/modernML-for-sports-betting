@@ -2,6 +2,8 @@
 
 ## Overview
 
+This repository extends the code from "Machine learning for sports betting: Should model selection be based on accuracy or calibration?". This includes separate, standalone pipelines for RNN and CatBoost to compare the results.
+
 This repository contains the code used to run the betting experiments in our paper "Machine learning for sports betting: Should model selection be based on accuracy or calibration?", published in Machine Learning with Applications ([https://doi.org/10.1016/j.mlwa.2024.100539](https://www.sciencedirect.com/science/article/pii/S266682702400015X?via%3Dihub)). The implementation provided here enables reproducibility of our experiments and offers a foundation for further exploration in this domain. While archived, this repo is still available to be forked by researchers who wish to build upon this work.
 
 ## Getting Started
