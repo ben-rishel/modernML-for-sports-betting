@@ -184,3 +184,45 @@ def build_sequences(
         target_column=target_column,
     ).build(games)
     return dataset.X, dataset.y, dataset.metadata
+
+
+def build_row_sequences(
+    features: pd.DataFrame,
+    labels: pd.Series | np.ndarray | List[int],
+    sequence_length: int,
+) -> Tuple[np.ndarray, np.ndarray, pd.DataFrame]:
+    """Create chronological windows from parent-pipeline feature rows.
+
+    The row immediately preceding a label is the final timestep in its
+    sequence, so the current game's features are never included in its input.
+    This adapter lets the RNN consume the same engineered and scaled rows as
+    the tabular models.
+    """
+
+    if sequence_length < 1:
+        raise ValueError("sequence_length must be at least 1.")
+    if features.empty:
+        raise ValueError("features must contain at least one row.")
+    values = features.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=np.float32)
+    if not np.isfinite(values).all():
+        raise ValueError("features must contain only finite numeric values.")
+    target = np.asarray(labels, dtype=np.int64)
+    if target.ndim != 1 or target.shape[0] != values.shape[0]:
+        raise ValueError("features and labels must contain the same number of rows.")
+    if not np.isin(target, [0, 1]).all():
+        raise ValueError("labels must contain only 0 and 1.")
+    if values.shape[0] <= sequence_length:
+        raise ValueError("At least sequence_length + 1 rows are required.")
+
+    X = np.stack(
+        [values[start : start + sequence_length] for start in range(values.shape[0] - sequence_length)],
+        axis=0,
+    )
+    y = target[sequence_length:]
+    metadata = pd.DataFrame(
+        {
+            "source_position": np.arange(sequence_length, values.shape[0]),
+            "source_index": features.index.to_numpy()[sequence_length:],
+        }
+    )
+    return X, y, metadata

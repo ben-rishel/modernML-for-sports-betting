@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Dict, List, TypedDict, Union
+from typing import Dict, List, Tuple, TypedDict, Union
 
 import numpy as np
 from calibra.errors import classwise_ece
@@ -23,6 +23,14 @@ class RNNTrainingParameters(TypedDict):
     learning_rate: float
     batch_size: int
     epochs: int
+
+
+class BettingSide(TypedDict):
+    bet: bool
+    win: bool
+
+
+BettingHistory = Dict[int, Dict[str, BettingSide]]
 
 
 class RNNBettingSimulation(BettingSimulation):
@@ -109,6 +117,55 @@ class RNNBettingSimulation(BettingSimulation):
         ) as file:
             json.dump(metrics, file, indent=4)
         return metrics
+
+    def save_results(
+        self,
+        rule: str,
+        betting_history: BettingHistory,
+        final_balance: float,
+        test: bool = False,
+    ) -> Tuple[Dict[str, Union[float, int]], Dict[str, Union[float, int]]]:
+        """Save RNN betting summaries without changing parent-pipeline outputs."""
+
+        roi = 100 * (final_balance - self.INITIAL_BANKROLL) / self.INITIAL_BANKROLL
+        bets_made = 0
+        bets_won = 0
+        for game in betting_history.values():
+            for side in ("home", "away"):
+                if game[side]["bet"]:
+                    bets_made += 1
+                    if game[side]["win"]:
+                        bets_won += 1
+
+        betting_results = {
+            "final_balance": float(final_balance),
+            "ROI": round(roi, 2),
+        }
+        betting_summary = {
+            "bets_made": bets_made,
+            "bets_won": bets_won,
+            "bet_percentage": round(
+                100 * bets_made / len(self.prediction_array), 2
+            )
+            if len(self.prediction_array)
+            else 0.0,
+            "win_percentage": round(100 * bets_won / bets_made, 2)
+            if bets_made
+            else 0.0,
+        }
+        if not test:
+            os.makedirs(self.output_dir, exist_ok=True)
+            for suffix, results in (
+                ("betting_results", betting_results),
+                ("betting_summary", betting_summary),
+            ):
+                with open(
+                    os.path.join(self.output_dir, f"{rule}_{suffix}.json"),
+                    "w",
+                    encoding="utf-8",
+                ) as file:
+                    json.dump(results, file, indent=4)
+        return betting_results, betting_summary
 
 
 def _classwise_ece_scalar(

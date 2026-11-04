@@ -2,7 +2,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.sequential_data import SequentialDataBuilder, build_sequences
+from src.sequential_data import (
+    SequentialDataBuilder,
+    build_row_sequences,
+    build_sequences,
+)
 
 
 def _games():
@@ -47,3 +51,18 @@ def test_builder_rejects_invalid_target():
 
     with pytest.raises(ValueError, match="only 0 and 1"):
         SequentialDataBuilder(["stat"], sequence_length=1).build(games)
+
+
+def test_build_row_sequences_uses_only_previous_rows():
+    features = pd.DataFrame({"stat": [10.0, 20.0, 30.0, 40.0]})
+
+    X, y, metadata = build_row_sequences(features, [0, 1, 0, 1], sequence_length=2)
+
+    np.testing.assert_array_equal(X[:, :, 0], [[10.0, 20.0], [20.0, 30.0]])
+    np.testing.assert_array_equal(y, [0, 1])
+    np.testing.assert_array_equal(metadata["source_position"], [2, 3])
+
+
+def test_build_row_sequences_rejects_short_input():
+    with pytest.raises(ValueError, match="sequence_length"):
+        build_row_sequences(pd.DataFrame({"stat": [1.0, 2.0]}), [0, 1], 2)
