@@ -1,28 +1,31 @@
 {
     "lr": {
-        "C": 0.7362419924704435,
-        "solver": "liblinear"
+        "C": 0.20786531284794624,
+        "solver": "lbfgs"
     },
     "rf": {
-        "criterion": "gini",
-        "max_depth": 7,
+        "criterion": "entropy",
+        "max_depth": 9,
         "max_features": 1,
-        "min_samples_leaf": 6,
-        "min_samples_split": 9,
-        "n_estimators": 95
+        "min_samples_leaf": 3,
+        "min_samples_split": 10,
+        "n_estimators": 25
     },
     "svm": {
-        "C": 0.543211507404294,
-        "degree": 4,
+        "C": 3.024820969078437,
+        "degree": 3,
         "kernel": "linear"
     },
     "mlp": {
-        "alpha": 0.004726229081520653,
-        "learning_rate_init": 0.002748553888715966,
-        "hidden_layer_sizes": 3,
+        "alpha": 0.0019067226736848464,
+        "learning_rate_init": 0.011923153180137893,
+        "hidden_layer_sizes": [
+            5,
+            5
+        ],
         "activation": "identity",
-        "solver": "adam",
+        "solver": "lbfgs",
         "batch_size": 32,
-        "learning_rate": "invscaling"
+        "learning_rate": "adaptive"
     }
 }

@@ -76,6 +76,8 @@ class NBABettingExperiment:
             betting_simulation_years: List[int] = [2019],
             num_hpo_trials: int = 10,
             num_prediction_runs: int = 10,
+            calibration_feature_override: List[str] = None,
+            accuracy_feature_override: List[str] = None,
     ):
         self.initial_training_years = initial_training_years
         self.validation_years = validation_years
@@ -85,6 +87,8 @@ class NBABettingExperiment:
         self.betting_simulation_years = betting_simulation_years
         self.num_hpo_trials = num_hpo_trials
         self.num_prediction_runs = num_prediction_runs
+        self.calibration_feature_override = calibration_feature_override
+        self.accuracy_feature_override = accuracy_feature_override
         
         logging.info('Beginning experiment.')
         logging.info(f'Initial training set seasons: {self.initial_training_years}')
@@ -249,10 +253,19 @@ class NBABettingExperiment:
         accuracy_feature_selector = FeatureSelector(initial_training_data_X, validation_data_X, initial_training_data_y, validation_data_y, metric='accuracy')
         calibration_feature_selector = FeatureSelector(initial_training_data_X, validation_data_X, initial_training_data_y, validation_data_y, metric='calibration')
 
-        accuracy_optimal_features = accuracy_feature_selector.run_feature_selection() 
-        logging.info(f'Optimal features for accuracy-driven predictive modelling: {accuracy_optimal_features}')   
-        calibration_optimal_features = calibration_feature_selector.run_feature_selection()
-        logging.info(f'Optimal features for calibration-driven predictive modelling: {calibration_optimal_features}')           
+        if self.accuracy_feature_override is not None:
+            accuracy_optimal_features = self.accuracy_feature_override
+            logging.info(f'Accuracy features overridden: {accuracy_optimal_features}')
+        else:
+            accuracy_optimal_features = accuracy_feature_selector.run_feature_selection()
+            logging.info(f'Optimal features for accuracy-driven predictive modelling: {accuracy_optimal_features}')
+
+        if self.calibration_feature_override is not None:
+            calibration_optimal_features = self.calibration_feature_override
+            logging.info(f'Calibration features overridden: {calibration_optimal_features}')
+        else:
+            calibration_optimal_features = calibration_feature_selector.run_feature_selection()
+            logging.info(f'Optimal features for calibration-driven predictive modelling: {calibration_optimal_features}')           
 
         OptimalFeatures = namedtuple('OptimalFeatures', 'accuracy_driven calibration_driven')
         optimal_features = OptimalFeatures(accuracy_optimal_features, calibration_optimal_features)

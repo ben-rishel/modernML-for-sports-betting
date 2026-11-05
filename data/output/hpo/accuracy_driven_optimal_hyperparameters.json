@@ -1,28 +1,31 @@
 {
     "lr": {
-        "C": 3.0213440562132874,
-        "solver": "lbfgs"
+        "C": 1.11714686423901,
+        "solver": "liblinear"
     },
     "rf": {
         "criterion": "gini",
         "max_depth": 5,
-        "max_features": 3,
-        "min_samples_leaf": 6,
-        "min_samples_split": 6,
-        "n_estimators": 59
+        "max_features": 2,
+        "min_samples_leaf": 4,
+        "min_samples_split": 8,
+        "n_estimators": 96
     },
     "svm": {
-        "C": 0.7891571284692401,
-        "degree": 2,
+        "C": 1.3861949553320645,
+        "degree": 3,
         "kernel": "rbf"
     },
     "mlp": {
-        "alpha": 0.0005734524495449169,
-        "learning_rate_init": 0.003335957502610237,
-        "hidden_layer_sizes": 6,
+        "alpha": 0.06795907033111924,
+        "learning_rate_init": 0.0674731744152,
+        "hidden_layer_sizes": [
+            6,
+            6
+        ],
         "activation": "identity",
         "solver": "lbfgs",
-        "batch_size": 64,
-        "learning_rate": "invscaling"
+        "batch_size": 32,
+        "learning_rate": "adaptive"
     }
 }
