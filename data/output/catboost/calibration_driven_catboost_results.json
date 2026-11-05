@@ -1,0 +1,61 @@
+{
+    "test_calibration_score": 0.02650603621612173,
+    "test_raw_calibration_score": 0.03063357449874999,
+    "test_calibration_scores_per_run": [
+        0.025735808451516323,
+        0.038644217259607275,
+        0.02776679715286167,
+        0.03502341108038594,
+        0.03324964313464863,
+        0.026660378530661236,
+        0.03471386338836202,
+        0.029926549587718974,
+        0.026337077244089704,
+        0.028277999157648108
+    ],
+    "test_raw_calibration_scores_per_run": [
+        0.025735808451516323,
+        0.038644217259607275,
+        0.02776679715286167,
+        0.03502341108038594,
+        0.03324964313464863,
+        0.026660378530661236,
+        0.03471386338836202,
+        0.029926549587718974,
+        0.026337077244089704,
+        0.028277999157648108
+    ],
+    "test_populated_bins_per_run": [
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16,
+        16
+    ],
+    "test_calibration_guard_failures": 0,
+    "test_accuracy": 0.635609334485739,
+    "betting_simulation_calibration_score": 0.04386674551335891,
+    "betting_simulation_accuracy": 0.6548442906574394,
+    "features": [
+        "3P",
+        "BLK",
+        "FT%",
+        "ORB%",
+        "AST%",
+        "previous_win_pct"
+    ],
+    "hyperparameters": {
+        "depth": 4,
+        "learning_rate": 0.010003696398864111,
+        "iterations": 500
+    },
+    "fixed_betting_final_balance": 14362.28335568532,
+    "fixed_betting_roi": 43.62,
+    "kelly_betting_final_balance": 19668.500024532867,
+    "kelly_betting_roi": 96.69
+}

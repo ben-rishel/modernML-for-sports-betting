@@ -3,6 +3,9 @@ import argparse
 from pipeline import NBABettingExperiment
 from catboost_calibration import run_catboost_calibration_side_experiment
 
+# Paper main text Subset B — ORB replaced with ORB% (ORB dropped by covariate shift detection)
+SUBSET_B_FEATURES = ['3P', 'BLK', 'FT%', 'ORB%', 'AST%', 'previous_win_pct']
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -30,6 +33,7 @@ def main():
         experiment,
         metric="calibration",
         output_dir=args.output_dir,
+        feature_override=SUBSET_B_FEATURES,
     )
 
     print(

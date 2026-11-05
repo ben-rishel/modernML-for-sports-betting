@@ -211,9 +211,10 @@ def evaluate_catboost_calibration(
         accuracies.append(accuracy_score(y_validate, predicted_labels))
 
     average_probabilities = probability_sum / num_runs
+    averaged_calibration_score = calculate_calibration_score(y_validate, average_probabilities)
 
     return {
-        "calibration_score": float(np.mean(calibration_scores)),
+        "calibration_score": averaged_calibration_score,
         "raw_calibration_score": float(np.mean(raw_calibration_scores)),
         "calibration_scores_per_run": [float(score) for score in calibration_scores],
         "raw_calibration_scores_per_run": raw_calibration_scores,
@@ -231,6 +232,7 @@ def run_catboost_calibration_side_experiment(
     experiment,
     metric: str = "calibration",
     output_dir: str = os.path.join(".", "data", "output", "catboost"),
+    feature_override: List[str] = None,
 ) -> dict:
     """Run a CatBoost calibration benchmark using the same split logic as the repo.
 
@@ -246,14 +248,17 @@ def run_catboost_calibration_side_experiment(
     y_train = preprocessed_datasets.initial_training["home_victory"].to_list()
     y_validate = preprocessed_datasets.validation["home_victory"].to_list()
 
-    feature_selector = FeatureSelector(
-        X_initial,
-        X_validate,
-        y_train,
-        y_validate,
-        metric="calibration",
-    )
-    selected_features = feature_selector.run_feature_selection(save_results=False)
+    if feature_override is not None:
+        selected_features = feature_override
+    else:
+        feature_selector = FeatureSelector(
+            X_initial,
+            X_validate,
+            y_train,
+            y_validate,
+            metric="calibration",
+        )
+        selected_features = feature_selector.run_feature_selection(save_results=False)
     X_initial = X_initial[selected_features]
     X_validate = X_validate[selected_features]
 
