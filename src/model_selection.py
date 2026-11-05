@@ -9,6 +9,7 @@ from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import accuracy_score
 from calibra.errors import classwise_ece
 from calibra.utils import bin_probabilities, get_classwise_bin_weights
 
@@ -81,58 +82,59 @@ class ModelSelector:
         self.num_scoring_runs = num_scoring_runs
         self.model_scores = {}
 
-    def get_score(self, model: Union[LogisticRegression, RandomForestClassifier, SVC, MLPClassifier]) -> float:
-        """Evaluate the performance of the given model on the test set under the given metric.
+    def get_score(self, y_pred_proba: np.ndarray) -> float:
+        """Calculate the score from averaged predicted probabilities evaluated on the test data.
 
-        If calibration is the metric, enforce constraint that at least 80% of bins must be non-empty.
+        Per the paper's methodology, predictions are averaged across random seeds before scoring,
+        rather than averaging per-seed scores. This matches the approach used in BettingSimulation.
 
         Args:
-            model (Union[LogisticRegression, RandomForestClassifier, SVC, MLPClassifier]):
-                Classifier under evaluation.
+            y_pred_proba (np.ndarray):
+                Averaged predicted probabilities across all scoring runs, shape (n_samples, 2).
 
         Returns:
-            float: 
-                Score of model under given metric.
+            float:
+                Score under the given metric.
         """
         if self.metric == "calibration":
             num_bins = 20
-            y_pred_proba = model.predict_proba(self.X_test)
             binned_probabilities = bin_probabilities(y_pred_proba, self.y_test, num_bins=num_bins)
             bin_weights = get_classwise_bin_weights(binned_probabilities)[0]
             non_empty_bins = [1 for weight in bin_weights if weight > 0]
             if sum(non_empty_bins) >= 0.8 * num_bins:
                 return classwise_ece(y_pred_proba, self.y_test, num_bins)
-            return 1        
-        return model.score(self.X_test, self.y_test)
+            return 1
+        predicted_labels = (y_pred_proba[:, 1] >= 0.5).astype(int)
+        return accuracy_score(self.y_test, predicted_labels)
         
 
     def score_lr(self):
         """
         Over several random seeds, fit the logistic regression model on the extended training data, with optimal features and hyperpameters.
-        
-        Score it on the test data. Record the average score achieved.
+
+        Average the predicted probabilities across seeds and score the averaged predictions.
         """
-        cumulative_score = 0
+        prediction_array = np.zeros((len(self.y_test), 2))
 
         for r in range(self.num_scoring_runs):
             model = LogisticRegression(
-                C=self.optimal_hyperparameters["lr"]["C"], 
-                solver=self.optimal_hyperparameters["lr"]["solver"], 
+                C=self.optimal_hyperparameters["lr"]["C"],
+                solver=self.optimal_hyperparameters["lr"]["solver"],
                 random_state=r,
             )
-            model.fit(self.X_train_extended, self.y_train_extended)         
-            cumulative_score += self.get_score(model)
+            model.fit(self.X_train_extended, self.y_train_extended)
+            prediction_array += model.predict_proba(self.X_test)
 
-        average_score = cumulative_score / self.num_scoring_runs
-        self.model_scores['lr'] = average_score
+        prediction_array /= self.num_scoring_runs
+        self.model_scores['lr'] = self.get_score(prediction_array)
 
     def score_rf(self):
         """
         Over several random seeds, fit the random forest model on the extended training data, with optimal features and hyperpameters.
-        
-        Score it on the test data. Record the average score achieved.
+
+        Average the predicted probabilities across seeds and score the averaged predictions.
         """
-        cumulative_score = 0
+        prediction_array = np.zeros((len(self.y_test), 2))
 
         for r in range(self.num_scoring_runs):
             model = RandomForestClassifier(
@@ -145,18 +147,18 @@ class ModelSelector:
                 random_state=r,
             )
             model.fit(self.X_train_extended, self.y_train_extended)
-            cumulative_score += self.get_score(model)
+            prediction_array += model.predict_proba(self.X_test)
 
-        average_score = cumulative_score / self.num_scoring_runs
-        self.model_scores['rf'] = average_score
+        prediction_array /= self.num_scoring_runs
+        self.model_scores['rf'] = self.get_score(prediction_array)
 
     def score_svm(self):
         """
         Over several random seeds, fit the support vector machine model on the extended training data, with optimal features and hyperpameters.
-        
-        Score it on the test data. Record the average score achieved.
+
+        Average the predicted probabilities across seeds and score the averaged predictions.
         """
-        cumulative_score = 0
+        prediction_array = np.zeros((len(self.y_test), 2))
 
         for r in range(self.num_scoring_runs):
             model = SVC(
@@ -166,23 +168,22 @@ class ModelSelector:
                 probability=True,
                 random_state=r,
             )
-            model.fit(self.X_train_extended, self.y_train_extended)         
-            cumulative_score += self.get_score(model)
+            model.fit(self.X_train_extended, self.y_train_extended)
+            prediction_array += model.predict_proba(self.X_test)
 
-        average_score = cumulative_score / self.num_scoring_runs
-        self.model_scores['svm'] = average_score
+        prediction_array /= self.num_scoring_runs
+        self.model_scores['svm'] = self.get_score(prediction_array)
 
 
     def score_mlp(self):
         """
         Over several random seeds, fit the multi-layer perceptron model on the extended training data, with optimal features and hyperpameters.
-        
-        Score it on the test data. Record the average score achieved.
+
+        Average the predicted probabilities across seeds and score the averaged predictions.
         """
-        cumulative_score = 0
+        prediction_array = np.zeros((len(self.y_test), 2))
 
         for r in range(self.num_scoring_runs):
-
             model = MLPClassifier(
                 hidden_layer_sizes=self.optimal_hyperparameters["mlp"]["hidden_layer_sizes"],
                 activation=self.optimal_hyperparameters["mlp"]["activation"],
@@ -193,11 +194,11 @@ class ModelSelector:
                 learning_rate_init=self.optimal_hyperparameters["mlp"]["learning_rate_init"],
                 random_state=r,
             )
-            model.fit(self.X_train_extended, self.y_train_extended)         
-            cumulative_score += self.get_score(model)
+            model.fit(self.X_train_extended, self.y_train_extended)
+            prediction_array += model.predict_proba(self.X_test)
 
-        average_score = cumulative_score / self.num_scoring_runs
-        self.model_scores['mlp'] = average_score
+        prediction_array /= self.num_scoring_runs
+        self.model_scores['mlp'] = self.get_score(prediction_array)
 
     def extract_best_model(self) -> str:
         """Extract the best-performing model from the scores dictionary.
