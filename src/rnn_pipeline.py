@@ -1,39 +1,77 @@
-"""CatBoost-style RNN experiment using the parent pipeline's datasets."""
+"""GRU-based RNN experiment using the parent pipeline's data splits."""
 
 import json
 import os
 from typing import Dict, List
 
 import numpy as np
+import pandas as pd
 from calibra.errors import classwise_ece
 from calibra.utils import bin_probabilities, get_classwise_bin_weights
 from hyperopt import STATUS_OK, Trials, fmin, hp, tpe
 from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import StandardScaler
 
-from feature_selection import FeatureSelector
 from rnn_model import RNNClassifier
 from rnn_simulate import RNNBettingSimulation
 from rnn_training import RNNTrainer
-from sequential_data import build_row_sequences
+from sequential_data import SequentialDataBuilder, SequentialDataset
+
+CANDIDATE_SEQ_LENGTHS = [5, 10, 15, 20]
+
+
+def _load_raw_games(years: List[int]) -> pd.DataFrame:
+    frames = []
+    for year in years:
+        path = os.path.join(".", "data", "input", f"results_and_box_scores_{year}.csv")
+        df = pd.read_csv(path)
+        df["_season"] = year
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True)
+
+
+def _detect_raw_features(games: pd.DataFrame) -> List[str]:
+    """Return feature names that have both home_{feat} and away_{feat} columns
+    and are fully numeric with no missing values."""
+    cols = set(games.columns)
+    features = []
+    for col in games.columns:
+        if col.startswith("home_"):
+            feat = col[5:]
+            away_col = f"away_{feat}"
+            if away_col not in cols:
+                continue
+            home_numeric = pd.to_numeric(games[col], errors="coerce")
+            away_numeric = pd.to_numeric(games[away_col], errors="coerce")
+            if home_numeric.isna().any() or away_numeric.isna().any():
+                continue
+            features.append(feat)
+    return sorted(features)
+
+
+def _build_scaled_dataset(
+    raw_df: pd.DataFrame,
+    feature_columns: List[str],
+    seq_len: int,
+    scaler: StandardScaler,
+) -> SequentialDataset:
+    ds = SequentialDataBuilder(feature_columns, sequence_length=seq_len).build(raw_df)
+    num_features = ds.X.shape[-1]
+    X_scaled = scaler.transform(ds.X.reshape(-1, num_features)).reshape(ds.X.shape).astype(np.float32)
+    return SequentialDataset(X=X_scaled, y=ds.y, metadata=ds.metadata)
 
 
 class RNNCalibrationHPO:
-    """Tune RNN parameters using the same validation protocol as CatBoost."""
+    """Tune GRU parameters using the same validation protocol as CatBoost."""
 
     def __init__(
         self,
-        X_train,
-        X_validate,
-        y_train: List[int],
-        y_validate: List[int],
+        seq_cache: Dict[int, Dict[str, SequentialDataset]],
         num_trials: int = 10,
         num_scoring_runs: int = 5,
         evaluations_per_trial: int = 64,
     ):
-        self.X_train = X_train.copy()
-        self.X_validate = X_validate.copy()
-        self.y_train = list(y_train)
-        self.y_validate = list(y_validate)
+        self.seq_cache = seq_cache
         self.num_trials = num_trials
         self.num_scoring_runs = num_scoring_runs
         self.evaluations_per_trial = evaluations_per_trial
@@ -54,46 +92,52 @@ class RNNCalibrationHPO:
 
     def define_search_space(self) -> Dict[str, object]:
         return {
-            "hidden_size": hp.choice("hidden_size", [16, 32, 64]),
+            "hidden_size": hp.choice("hidden_size", [32, 64, 128]),
             "num_layers": hp.choice("num_layers", [1, 2]),
+            "dropout": hp.choice("dropout", [0.0, 0.1, 0.2]),
             "learning_rate": hp.loguniform(
                 "learning_rate", np.log(0.0001), np.log(0.01)
             ),
             "batch_size": hp.choice("batch_size", [16, 32, 64]),
-            "epochs": hp.choice("epochs", [10, 20, 40]),
-            "sequence_length": hp.choice("sequence_length", [5, 10, 15]),
+            "epochs": hp.choice("epochs", [20, 50, 100]),
+            "sequence_length": hp.choice("sequence_length", CANDIDATE_SEQ_LENGTHS),
         }
 
     @staticmethod
     def _decode(best: Dict[str, object]) -> Dict[str, object]:
+        num_layers = [1, 2][best["num_layers"]]
+        raw_dropout = [0.0, 0.1, 0.2][best["dropout"]]
         return {
-            "hidden_size": [16, 32, 64][best["hidden_size"]],
-            "num_layers": [1, 2][best["num_layers"]],
-            "dropout": 0.0,
+            "hidden_size": [32, 64, 128][best["hidden_size"]],
+            "num_layers": num_layers,
+            "dropout": 0.0 if num_layers == 1 else raw_dropout,
             "learning_rate": float(best["learning_rate"]),
             "batch_size": [16, 32, 64][best["batch_size"]],
-            "epochs": [10, 20, 40][best["epochs"]],
-            "sequence_length": [5, 10, 15][best["sequence_length"]],
+            "epochs": [20, 50, 100][best["epochs"]],
+            "sequence_length": CANDIDATE_SEQ_LENGTHS[best["sequence_length"]],
         }
 
     def _fit_and_score(self, params: Dict[str, object], seed: int) -> float:
-        sequence_length = int(params["sequence_length"])
-        X_train, y_train, _ = build_row_sequences(
-            self.X_train, self.y_train, sequence_length
-        )
-        X_validate, y_validate, _ = build_row_sequences(
-            self.X_validate, self.y_validate, sequence_length
-        )
+        seq_len = int(params["sequence_length"])
+        split = self.seq_cache[seq_len]
+        X_train = split["train"].X
+        y_train = split["train"].y
+        X_validate = split["validate"].X
+        y_validate = split["validate"].y
+
+        num_layers = int(params["num_layers"])
+        raw_dropout = float(params.get("dropout", 0.0))
+        dropout = 0.0 if num_layers == 1 else raw_dropout
+
         np.random.seed(seed)
         import torch
-
         torch.manual_seed(seed)
         trainer = RNNTrainer(
             RNNClassifier(
                 input_size=X_train.shape[-1],
                 hidden_size=int(params["hidden_size"]),
-                num_layers=int(params["num_layers"]),
-                dropout=float(params["dropout"]),
+                num_layers=num_layers,
+                dropout=dropout,
             ),
             learning_rate=float(params["learning_rate"]),
             batch_size=int(params["batch_size"]),
@@ -108,9 +152,7 @@ class RNNCalibrationHPO:
         trials = Trials()
         best = fmin(
             fn=lambda params: {
-                "loss": self._fit_and_score(
-                    {**params, "dropout": 0.0}, trial_index
-                ),
+                "loss": self._fit_and_score(params, trial_index),
                 "status": STATUS_OK,
             },
             space=self.define_search_space(),
@@ -136,37 +178,41 @@ class RNNCalibrationHPO:
 
 
 def evaluate_rnn(
-    X_train,
-    X_validate,
-    y_train: List[int],
-    y_validate: List[int],
+    X_train: np.ndarray,
+    X_validate: np.ndarray,
+    y_train,
+    y_validate,
     num_runs: int = 1,
     **parameters,
 ) -> dict:
-    """Average seeded RNN predictions using the CatBoost calibration protocol."""
+    """Average seeded GRU predictions using the CatBoost calibration protocol.
 
-    X_train, y_train, _ = build_row_sequences(
-        X_train, y_train, int(parameters["sequence_length"])
-    )
-    X_validate, y_validate, _ = build_row_sequences(
-        X_validate, y_validate, int(parameters["sequence_length"])
-    )
+    Expects pre-built, pre-scaled sequence arrays — no internal sequence
+    building happens here.
+    """
+    y_train = np.asarray(y_train, dtype=np.int64)
+    y_validate = np.asarray(y_validate, dtype=np.int64)
+
     probability_sum = np.zeros((len(y_validate), 2), dtype=float)
     calibration_scores = []
     raw_scores = []
     populated_bins = []
     accuracies = []
+
+    num_layers = int(parameters["num_layers"])
+    raw_dropout = float(parameters.get("dropout", 0.0))
+    dropout = 0.0 if num_layers == 1 else raw_dropout
+
     for seed in range(num_runs):
         np.random.seed(seed)
         import torch
-
         torch.manual_seed(seed)
         trainer = RNNTrainer(
             RNNClassifier(
                 input_size=X_train.shape[-1],
                 hidden_size=int(parameters["hidden_size"]),
-                num_layers=int(parameters["num_layers"]),
-                dropout=float(parameters["dropout"]),
+                num_layers=num_layers,
+                dropout=dropout,
             ),
             learning_rate=float(parameters["learning_rate"]),
             batch_size=int(parameters["batch_size"]),
@@ -184,8 +230,13 @@ def evaluate_rnn(
             RNNCalibrationHPO.calculate_calibration_score(y_validate, probabilities)
         )
         accuracies.append(accuracy_score(y_validate, probabilities[:, 1] >= 0.5))
+
+    average_probabilities = probability_sum / num_runs
+    averaged_calibration_score = RNNCalibrationHPO.calculate_calibration_score(
+        y_validate, average_probabilities
+    )
     return {
-        "calibration_score": float(np.mean(calibration_scores)),
+        "calibration_score": averaged_calibration_score,
         "raw_calibration_score": float(np.mean(raw_scores)),
         "calibration_scores_per_run": calibration_scores,
         "raw_calibration_scores_per_run": raw_scores,
@@ -201,67 +252,95 @@ def run_rnn_calibration_side_experiment(
     output_dir: str = os.path.join(".", "data", "output", "rnn"),
     evaluations_per_trial: int = 64,
 ) -> dict:
-    """Run RNN using the parent pipeline and CatBoost-style evaluation stages."""
+    """Run GRU using the parent pipeline's data splits and CatBoost-style evaluation."""
 
     preprocessed = experiment.load_and_preprocess()
-    modelling_ready = experiment.extract_features(preprocessed)
-    X_initial = modelling_ready.initial_training
-    X_validate = modelling_ready.validation
-    y_train = preprocessed.initial_training["home_victory"].to_list()
-    y_validate = preprocessed.validation["home_victory"].to_list()
 
-    selector = FeatureSelector(
-        X_initial, X_validate, y_train, y_validate, metric="calibration"
+    all_years = (
+        experiment.initial_training_years
+        + experiment.validation_years
+        + experiment.test_years
+        + experiment.betting_simulation_years
     )
-    selected_features = selector.run_feature_selection(save_results=False)
-    X_initial = X_initial[selected_features]
-    X_validate = X_validate[selected_features]
+    raw_initial  = _load_raw_games(experiment.initial_training_years)
+    raw_validate = _load_raw_games(experiment.validation_years)
+    raw_extended = _load_raw_games(experiment.initial_training_years + experiment.validation_years)
+    raw_test     = _load_raw_games(experiment.test_years)
+    raw_final    = _load_raw_games(
+        experiment.initial_training_years + experiment.validation_years + experiment.test_years
+    )
+    raw_betting  = _load_raw_games(experiment.betting_simulation_years)
+
+    feature_columns = _detect_raw_features(raw_initial)
+
+    # Fit scaler on initial training sequences (flattened timesteps)
+    _seed_ds = SequentialDataBuilder(feature_columns, sequence_length=5).build(raw_initial)
+    scaler = StandardScaler()
+    scaler.fit(_seed_ds.X.reshape(-1, _seed_ds.X.shape[-1]))
+
+    # Pre-build scaled sequence caches for all HPO-candidate sequence lengths
+    seq_cache = {
+        seq_len: {
+            "train":    _build_scaled_dataset(raw_initial,  feature_columns, seq_len, scaler),
+            "validate": _build_scaled_dataset(raw_validate, feature_columns, seq_len, scaler),
+        }
+        for seq_len in CANDIDATE_SEQ_LENGTHS
+    }
 
     hpo = RNNCalibrationHPO(
-        X_initial,
-        X_validate,
-        y_train,
-        y_validate,
+        seq_cache=seq_cache,
         num_trials=experiment.num_hpo_trials,
         num_scoring_runs=experiment.num_prediction_runs,
         evaluations_per_trial=evaluations_per_trial,
     )
     best = hpo.run_hpo()
+    seq_len = int(best["sequence_length"])
+
+    extended_ds = _build_scaled_dataset(raw_extended, feature_columns, seq_len, scaler)
+    test_ds     = _build_scaled_dataset(raw_test,     feature_columns, seq_len, scaler)
+    final_ds    = _build_scaled_dataset(raw_final,    feature_columns, seq_len, scaler)
+    betting_ds  = _build_scaled_dataset(raw_betting,  feature_columns, seq_len, scaler)
 
     test_result = evaluate_rnn(
-        modelling_ready.extended_training[selected_features],
-        modelling_ready.test[selected_features],
-        preprocessed.extended_training["home_victory"].to_list(),
-        preprocessed.test["home_victory"].to_list(),
+        extended_ds.X,
+        test_ds.X,
+        extended_ds.y,
+        test_ds.y,
         num_runs=experiment.num_prediction_runs,
         **best,
     )
 
-    final_X, final_y, _ = build_row_sequences(
-        modelling_ready.final_training[selected_features],
-        preprocessed.final_training["home_victory"].to_list(),
-        int(best["sequence_length"]),
-    )
-    betting_X, betting_y, betting_metadata = build_row_sequences(
-        modelling_ready.betting_simulation[selected_features],
-        preprocessed.betting_simulation["home_victory"].to_list(),
-        int(best["sequence_length"]),
-    )
-    odds = preprocessed.odds.iloc[
-        betting_metadata["source_position"].to_numpy()
-    ].reset_index(drop=True)
+    # Align odds to betting sequences via Date + Home/Neutral join
+    betting_lookup = {
+        (str(r["Date"]), str(r["Home/Neutral"])): pos
+        for pos, r in enumerate(preprocessed.betting_simulation.to_dict("records"))
+    }
+    odds_positions = []
+    valid_mask = []
+    for _, meta_row in betting_ds.metadata.iterrows():
+        key = (str(meta_row["Date"]), str(meta_row["Home/Neutral"]))
+        if key in betting_lookup:
+            odds_positions.append(betting_lookup[key])
+            valid_mask.append(True)
+        else:
+            valid_mask.append(False)
+    valid_mask = np.array(valid_mask)
+    betting_X = betting_ds.X[valid_mask]
+    betting_y = betting_ds.y[valid_mask].tolist()
+    odds = preprocessed.odds.iloc[odds_positions].reset_index(drop=True)
+
     simulation = RNNBettingSimulation(
-        model_input_size=final_X.shape[-1],
+        model_input_size=final_ds.X.shape[-1],
         model_hyperparameters={
             key: best[key] for key in ("hidden_size", "num_layers", "dropout")
         },
         training_hyperparameters={
             key: best[key] for key in ("learning_rate", "batch_size", "epochs")
         },
-        X_train_final=final_X,
-        y_train_final=final_y.tolist(),
+        X_train_final=final_ds.X,
+        y_train_final=final_ds.y.tolist(),
         X_betting_simulation=betting_X,
-        y_betting_simulation=betting_y.tolist(),
+        y_betting_simulation=betting_y,
         odds=odds,
         output_dir=output_dir,
         num_runs=experiment.num_prediction_runs,
@@ -274,7 +353,7 @@ def run_rnn_calibration_side_experiment(
     result = {
         "test_metrics": test_result,
         "betting_simulation_metrics": betting_metrics,
-        "features": selected_features,
+        "features": feature_columns,
         "hyperparameters": best,
         "fixed_betting_final_balance": fixed_bankroll[-1],
         "fixed_betting_roi": round(

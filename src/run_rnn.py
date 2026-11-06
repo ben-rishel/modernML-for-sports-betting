@@ -11,6 +11,9 @@ from sequential_data import SequentialDataBuilder
 
 DEFAULT_FEATURES = ["FG", "FG%", "3P", "3P%", "FT", "FT%"]
 
+# Paper main text Subset B — ORB replaced with ORB% (ORB dropped by covariate shift detection)
+SUBSET_B_FEATURES = ['3P', 'BLK', 'FT%', 'ORB%', 'AST%', 'previous_win_pct']
+
 
 def load_games(years: Iterable[int]) -> pd.DataFrame:
     """Load and concatenate raw game data for the supplied seasons."""
@@ -96,8 +99,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=20, help=argparse.SUPPRESS)
     parser.add_argument("--num-runs", type=int, default=1, help=argparse.SUPPRESS)
     parser.add_argument("--num-hpo-trials", type=int, default=10)
-    parser.add_argument("--num-scoring-runs", type=int, default=10)
-    parser.add_argument("--evaluations-per-trial", type=int, default=64)
+    parser.add_argument("--num-scoring-runs", type=int, default=5)
+    parser.add_argument("--evaluations-per-trial", type=int, default=20)
     parser.add_argument("--output-dir", default="./data/output/rnn")
     return parser.parse_args()
 

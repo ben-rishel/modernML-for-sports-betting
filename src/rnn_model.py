@@ -26,19 +26,15 @@ class RNNClassifier(nn.Module):
             raise ValueError("num_layers must be at least 1.")
         if not 0 <= dropout < 1:
             raise ValueError("dropout must be in the range [0, 1).")
-        if num_layers == 1 and dropout != 0:
-            raise ValueError("dropout must be 0 when num_layers is 1.")
-
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.rnn = nn.RNN(
+        self.rnn = nn.GRU(
             input_size=input_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
             batch_first=True,
             dropout=dropout,
-            nonlinearity="tanh",
         )
         self.classifier = nn.Linear(hidden_size, 1)
 
