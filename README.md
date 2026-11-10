@@ -2,13 +2,13 @@
 
 ## Overview
 
-This repository is a DS340W capstone project extending ["Machine learning for sports betting: Should model selection be based on accuracy or calibration?"](https://doi.org/10.1016/j.mlwa.2024.100539) (Walsh & Joshi, 2024).
+This repository is a DS340W project extending ["Machine learning for sports betting: Should model selection be based on accuracy or calibration?"](https://doi.org/10.1016/j.mlwa.2024.100539) (Walsh & Joshi, 2024).
 
-The parent paper demonstrates that calibration-driven model selection — choosing models and features based on probability calibration (ECE) rather than classification accuracy — produces significantly better Kelly criterion betting returns using an SVM baseline. This project asks whether modern ML architectures (CatBoost and GRU-based RNN) improve on those results when applied within the same calibration-driven framework.
+The parent paper demonstrates that calibration-driven model selection, choosing models and features based on probability calibration (ECE) rather than classification accuracy, produces significantly better betting returns using an SVM baseline. This project asks whether modern ML architectures (CatBoost and RNN) improve on those results when applied within the same calibration-driven framework.
 
 **Team:**
 - Ben Rishel — CatBoost pipeline
-- Jacqueline — RNN pipeline
+- Jacqueline Maloney — RNN pipeline
 
 ---
 
