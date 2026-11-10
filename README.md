@@ -1,60 +1,98 @@
-# Machine learning for sports betting: Should model selection be based on accuracy or calibration?
+# Modern ML for Sports Betting: Extending Walsh & Joshi (2024)
 
 ## Overview
 
-This repository extends the code from "Machine learning for sports betting: Should model selection be based on accuracy or calibration?". This includes separate, standalone pipelines for RNN and CatBoost to compare the results.
+This repository is a DS340W capstone project extending ["Machine learning for sports betting: Should model selection be based on accuracy or calibration?"](https://doi.org/10.1016/j.mlwa.2024.100539) (Walsh & Joshi, 2024).
 
-This repository contains the code used to run the betting experiments in our paper "Machine learning for sports betting: Should model selection be based on accuracy or calibration?", published in Machine Learning with Applications ([https://doi.org/10.1016/j.mlwa.2024.100539](https://www.sciencedirect.com/science/article/pii/S266682702400015X?via%3Dihub)). The implementation provided here enables reproducibility of our experiments and offers a foundation for further exploration in this domain. While archived, this repo is still available to be forked by researchers who wish to build upon this work.
+The parent paper demonstrates that calibration-driven model selection — choosing models and features based on probability calibration (ECE) rather than classification accuracy — produces significantly better Kelly criterion betting returns using an SVM baseline. This project asks whether modern ML architectures (CatBoost and GRU-based RNN) improve on those results when applied within the same calibration-driven framework.
+
+**Team:**
+- Ben Rishel — CatBoost pipeline
+- Jacqueline — RNN pipeline
+
+---
+
+## Pipelines
+
+There are three runnable pipelines:
+
+### 1. Parent paper reproduction (`run_pipeline_subset_b.py`)
+Reproduces the Walsh & Joshi (2024) results using the paper's main-text feature subsets (Subset B for calibration, Subset C for accuracy). Runs SVM, LR, RF, and MLP candidates and selects the best under each criterion.
+
+```bash
+poetry run python src/run_pipeline_subset_b.py
+```
+
+Runtime: ~45 minutes. Results saved to `data/output/`.
+
+### 2. CatBoost calibration benchmark (`run_catboost_calibration.py`)
+Runs a standalone CatBoost experiment using the same calibration-driven protocol as the parent paper (Subset B features, ECE-based HPO, identical data splits).
+
+```bash
+poetry run python src/run_catboost_calibration.py
+```
+
+Runtime: ~15–20 minutes. Results saved to `data/output/catboost/`.
+
+### 3. RNN calibration benchmark (`run_rnn.py`)
+Runs a standalone GRU-based RNN experiment. Uses raw per-team box score time series (all available features) with team-aware sequential data construction, ECE-based HPO, and identical data splits.
+
+```bash
+poetry run python src/run_rnn.py
+```
+
+Runtime: ~2–3 hours. Results saved to `data/output/rnn/`.
+
+Key options:
+```bash
+poetry run python src/run_rnn.py --num-hpo-trials 10 --evaluations-per-trial 20 --num-scoring-runs 5
+```
+
+---
 
 ## Getting Started
 
 1. **Clone the repository:**
-
    ```bash
-   git clone https://github.com/conorwalsh99/ml-for-sports-betting.git
-    ```
+   git clone <repo-url>
+   cd modernML-for-sports-betting
+   ```
 
-2. **Change directory to project root:**
+2. **Install dependencies** (requires [Poetry](https://python-poetry.org/)):
    ```bash
-   cd ml-for-sports-betting
-    ```
-    
-3. **Install dependencies**
-    ```
-    poetry install
-    ```
-    
-4. **Run betting experiment pipeline**
-    ```
-    poetry run python src/run_pipeline.py
-    ```
+   poetry install
+   ```
 
-Note: The pipeline run can take some time to complete (approx. 45 mins).
+3. **Run a pipeline** — see commands above.
 
-## Citation
-If you use this code in your research or any related work, please cite our paper:
-```
-@article{walsh2024machine,
-  title={Machine learning for sports betting: should model selection be based on accuracy or calibration?},
-  author={Walsh, Conor and Joshi, Alok},
-  journal={Machine Learning with Applications},
-  volume={16},
-  pages={100539},
-  year={2024},
-  publisher={Elsevier}
-}
-```
+---
 
-## License
+## Key Results
 
-This repository is open-sourced and free to use, modify, and distribute for any purpose as long as you cite the paper. See the LICENSE file for complete details.
+| Metric | SVM (reproduced) | CatBoost | RNN (GRU) |
+|--------|-----------------|----------|-----------|
+| Test ECE | 3.17% | 2.65% | 5.52% |
+| Test Accuracy | 66.6% | 63.6% | 63.0% |
+| Fixed Betting ROI (2019) | +45.1% | +43.6% | +15.1% |
+| Kelly Betting ROI (2019) | +52.3% | +96.7% | −10.1% |
 
-## Acknowledgements
+Paper reported values: Calibration Kelly +36.93%, Accuracy Kelly −75.9%.
 
-We appreciate your interest in our work. For any questions, feedback, or contributions, please feel free to contact the corresponding author directly at conorwalsh206@gmail.com. 
+---
 
-## Corrigendum Notice
+## Data Splits
 
-**Important:** During the process of modularising and unit testing of the code in anticipation of making it open-source, some errors were discovered in the original implementation of this project. These errors have been corrected, and a corrigendum has been published. This repository now contains the updated code reflecting those corrections.
+All pipelines use the same temporal splits to prevent data leakage:
 
-For more details on the changes, please refer to [https://doi.org/10.1016/j.mlwa.2025.100627](https://www.sciencedirect.com/science/article/pii/S2666827025000106).
+| Split | Years | Purpose |
+|-------|-------|---------|
+| Initial training | 2015–2016 | Model training during HPO |
+| Validation | 2017 | HPO scoring (ECE or accuracy) |
+| Test | 2018 | Final model evaluation |
+| Betting simulation | 2019 | ROI measurement |
+
+---
+
+## Parent Paper
+
+Walsh, C., & Joshi, A. (2024). Machine learning for sports betting: should model selection be based on accuracy or calibration? *Machine Learning with Applications*, 16, 100539. [https://doi.org/10.1016/j.mlwa.2024.100539](https://doi.org/10.1016/j.mlwa.2024.100539)
