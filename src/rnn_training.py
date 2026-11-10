@@ -42,6 +42,8 @@ class RNNTrainer:
         self.batch_size = batch_size
         self.epochs = epochs
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
         self.model.to(self.device)
         self.loss_function = nn.BCEWithLogitsLoss()
         self.optimizer = torch.optim.Adam(
