@@ -168,6 +168,13 @@ class RNNBettingSimulation(BettingSimulation):
         return betting_results, betting_summary
 
 
+    def _save_bankroll_tracker(self, rule: str, bankroll_tracker: List[float]) -> None:
+        os.makedirs(self.output_dir, exist_ok=True)
+        path = os.path.join(self.output_dir, f"{rule}_bankroll.json")
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(bankroll_tracker, file)
+
+
 def _classwise_ece_scalar(
     probabilities: np.ndarray, y_true: List[int]
 ) -> float:

@@ -365,6 +365,7 @@ class BettingSimulation:
         final_balance = bankroll_tracker[-1]
         if save_results:
             self.save_results(rule, betting_history, final_balance)
+            self._save_bankroll_tracker(rule, bankroll_tracker)
 
         value_bets = {
             'predicted_probability': [],
@@ -380,3 +381,8 @@ class BettingSimulation:
                 value_bets['implied_probability'].append(game['away']['implied_probability'])
 
         return bankroll_tracker, value_bets
+
+    def _save_bankroll_tracker(self, rule: str, bankroll_tracker: List[float]) -> None:
+        path = os.path.join(".", "data", "output", f"{rule}_betting", f"{self.metric}_driven_bankroll.json")
+        with open(path, "w") as file:
+            json.dump(bankroll_tracker, file)

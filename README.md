@@ -67,6 +67,20 @@ poetry run python src/run_rnn.py --num-hpo-trials 10 --evaluations-per-trial 20 
 
 ---
 
+## Bankroll Chart
+
+To regenerate the bankroll progression chart (`data/output/bankroll_chart.png`) showing all four models across the 2018-19 betting simulation:
+
+```bash
+poetry run python src/run_all_and_plot.py
+```
+
+This script re-runs the SVM betting simulation using saved HPO results (~2 minutes), re-runs the RNN pipeline (~2–3 hours), then generates the chart automatically. CatBoost bankroll data is read from the existing results and does not require a re-run.
+
+The chart is already committed at `data/output/bankroll_chart.png` if you only need to view it.
+
+---
+
 ## Key Results
 
 | Metric | SVM (reproduced) | CatBoost | RNN (GRU) |
