@@ -9,12 +9,6 @@ import pandas as pd
 from sequential_data import SequentialDataBuilder
 
 
-DEFAULT_FEATURES = ["FG", "FG%", "3P", "3P%", "FT", "FT%"]
-
-# Paper main text Subset B — ORB replaced with ORB% (ORB dropped by covariate shift detection)
-SUBSET_B_FEATURES = ['3P', 'BLK', 'FT%', 'ORB%', 'AST%', 'previous_win_pct']
-
-
 def load_games(years: Iterable[int]) -> pd.DataFrame:
     """Load and concatenate raw game data for the supplied seasons."""
 
@@ -89,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--validation-years", nargs="+", type=int, default=[2017])
     parser.add_argument("--test-years", nargs="+", type=int, default=[2018])
     parser.add_argument("--betting-simulation-years", nargs="+", type=int, default=[2019])
-    parser.add_argument("--features", nargs="+", default=DEFAULT_FEATURES, help=argparse.SUPPRESS)
+    parser.add_argument("--features", nargs="+", default=[], help=argparse.SUPPRESS)
     parser.add_argument("--sequence-length", type=int, default=10, help=argparse.SUPPRESS)
     parser.add_argument("--hidden-size", type=int, default=32, help=argparse.SUPPRESS)
     parser.add_argument("--num-layers", type=int, default=1, help=argparse.SUPPRESS)
