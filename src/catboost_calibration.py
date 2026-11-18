@@ -12,11 +12,10 @@ from catboost_simulate import CatBoostBettingSimulation
 
 
 class CatBoostCalibrationHPO:
-    """Validation-based HPO side-branch for CatBoost calibration benchmarking.
+    """Bayesian hyperparameter optimisation for CatBoost using the calibration criterion.
 
-    This mirrors the existing project protocol: tune on validation data using the
-    same calibration objective, then keep the test split untouched. This does not
-    alter the main workflow in the repo.
+    Mirrors the parent paper's HPO protocol: tune on the validation split using
+    classwise-ECE as the objective, leaving the test split completely untouched.
     """
 
     def __init__(
@@ -45,6 +44,13 @@ class CatBoostCalibrationHPO:
         y_pred_proba,
         num_bins: int = 20,
     ) -> float:
+        """Compute classwise-ECE with the parent paper's sparse-bin guard.
+
+        If fewer than 80% of probability bins are non-empty, the model's
+        predictions are too clustered to measure calibration reliably.
+        In that case we return 1.0 (worst possible score) to prevent HPO
+        from exploiting degenerate probability distributions.
+        """
         y_true = np.asarray(y_true, dtype=int)
         y_pred_proba = np.asarray(y_pred_proba, dtype=float)
 
@@ -62,12 +68,17 @@ class CatBoostCalibrationHPO:
         return 1.0
 
     def get_score(self, model) -> float:
-        """Score the model under the project’s calibration criterion."""
+        """Score a fitted model on the validation set using classwise-ECE."""
         predictions = model.predict_proba(self.X_validate)
         return self.calculate_calibration_score(self.y_validate, predictions)
 
     def define_search_space(self) -> Dict[str, object]:
-        """Define a Hyperopt search space matching the repo's Bayesian HPO setup."""
+        """Define the Bayesian search space over CatBoost's key hyperparameters.
+
+        - depth: controls tree complexity (symmetric trees — same split at each level)
+        - learning_rate: shrinkage applied to each tree's contribution
+        - iterations: number of trees in the ensemble
+        """
         return {
             "depth": hp.choice("depth", [4, 6, 8, 10]),
             "learning_rate": hp.loguniform("learning_rate", np.log(0.01), np.log(0.2)),
@@ -75,6 +86,7 @@ class CatBoostCalibrationHPO:
         }
 
     def objective(self, params: Dict[str, object], random_seed: int) -> Dict[str, float]:
+        """Train one CatBoost model and return its validation ECE as the HPO loss."""
         try:
             from catboost import CatBoostClassifier
         except ImportError as exc:  # pragma: no cover
@@ -86,7 +98,7 @@ class CatBoostCalibrationHPO:
             depth=params["depth"],
             learning_rate=params["learning_rate"],
             iterations=params["iterations"],
-            loss_function="Logloss",
+            loss_function="Logloss",   # binary cross-entropy — proper scoring rule
             verbose=False,
             allow_writing_files=False,
             random_seed=random_seed,
@@ -95,6 +107,7 @@ class CatBoostCalibrationHPO:
         return {"loss": self.get_score(model), "status": STATUS_OK}
 
     def decode_hyperparameters(self, best: Dict[str, object]) -> Dict[str, float]:
+        # hyperopt returns indices into hp.choice lists — convert back to actual values
         return {
             "depth": [4, 6, 8, 10][best["depth"]],
             "learning_rate": float(best["learning_rate"]),
@@ -105,7 +118,10 @@ class CatBoostCalibrationHPO:
         self,
         params: Dict[str, float],
     ) -> float:
-        """Average the validation score over the configured random seeds."""
+        """Re-train with the best params across multiple seeds and average the ECE.
+
+        This reduces variance from a single lucky seed dominating the result.
+        """
         try:
             from catboost import CatBoostClassifier
         except ImportError as exc:  # pragma: no cover
@@ -127,22 +143,22 @@ class CatBoostCalibrationHPO:
         return cumulative_score / self.num_scoring_runs
 
     def run_single_hpo_trial(self, trial_index: int) -> Dict[str, object]:
-        """Run one seeded TPE search, then score its best parameters repeatedly."""
+        """Run one seeded TPE search, then score the best parameters it finds."""
         trials = Trials()
         best = fmin(
             fn=lambda params: self.objective(params, random_seed=trial_index),
             space=self.define_search_space(),
-            algo=tpe.suggest,
+            algo=tpe.suggest,         # Tree-structured Parzen Estimator (Bayesian)
             max_evals=self.evaluations_per_trial,
             trials=trials,
-            rstate=np.random.default_rng(trial_index),
+            rstate=np.random.default_rng(trial_index),  # seed for reproducibility
         )
         best_hyperparameters = self.decode_hyperparameters(best)
         average_score = self.score_hyperparameters(best_hyperparameters)
         return {"hyperparameters": best_hyperparameters, "score": average_score}
 
     def run_hpo(self) -> Dict[str, float]:
-        """Run independent TPE searches and select the best repeated validation score."""
+        """Run all HPO trials independently and return the best-scoring hyperparameters."""
         self.hpo_results = [
             self.run_single_hpo_trial(trial_index)
             for trial_index in range(self.num_trials)
@@ -155,7 +171,7 @@ def calculate_calibration_score(
     y_pred_proba,
     num_bins: int = 20,
 ) -> float:
-    """Public helper that mirrors the repo's calibration scoring logic."""
+    """Module-level wrapper around the HPO class's calibration scoring logic."""
     return CatBoostCalibrationHPO.calculate_calibration_score(y_true, y_pred_proba, num_bins=num_bins)
 
 
@@ -167,7 +183,11 @@ def evaluate_catboost_calibration(
     num_runs: int = 1,
     **model_kwargs,
 ) -> dict:
-    """Average seeded CatBoost predictions and score them on the supplied split."""
+    """Evaluate CatBoost calibration by averaging predictions across seeded runs.
+
+    Averaging predictions before scoring (rather than averaging per-seed scores)
+    matches the parent paper's methodology and reduces variance from individual seeds.
+    """
     try:
         from catboost import CatBoostClassifier
     except ImportError as exc:  # pragma: no cover
@@ -178,6 +198,7 @@ def evaluate_catboost_calibration(
     if num_runs < 1:
         raise ValueError("num_runs must be at least 1.")
 
+    # Accumulate predicted probabilities across seeds before computing ECE
     probability_sum = np.zeros((len(X_validate), 2), dtype=float)
     calibration_scores = []
     raw_calibration_scores = []
@@ -195,6 +216,8 @@ def evaluate_catboost_calibration(
         model.fit(X_train, y_train)
         predicted_probabilities = np.asarray(model.predict_proba(X_validate))
         probability_sum += predicted_probabilities
+
+        # Track per-run bin population to detect calibration guard failures
         binned_probabilities = bin_probabilities(
             predicted_probabilities, y_validate, num_bins=20
         )
@@ -210,6 +233,7 @@ def evaluate_catboost_calibration(
         predicted_labels = (predicted_probabilities[:, 1] >= 0.5).astype(int)
         accuracies.append(accuracy_score(y_validate, predicted_labels))
 
+    # Score the averaged probabilities — this is the definitive calibration metric
     average_probabilities = probability_sum / num_runs
     averaged_calibration_score = calculate_calibration_score(y_validate, average_probabilities)
 
@@ -234,57 +258,55 @@ def run_catboost_calibration_side_experiment(
     output_dir: str = os.path.join(".", "data", "output", "catboost"),
     feature_override: List[str] = None,
 ) -> dict:
-    """Run a CatBoost calibration benchmark using the same split logic as the repo.
+    """Run the full CatBoost calibration pipeline end-to-end.
 
-    This intentionally does not modify the existing accuracy/calibration selection
-    workflow. It consumes the prepared datasets and evaluates CatBoost under the
-    same calibration criterion used elsewhere in the project.
+    Stages:
+      1. Load and preprocess data using the shared parent-paper pipeline
+      2. Apply feature selection (or use the provided override)
+      3. Run Bayesian HPO on the 2015-2017 calibration split
+      4. Evaluate the best model on the 2018 test set
+      5. Retrain on 2015-2018 and run the 2019 betting simulation
     """
     preprocessed_datasets = experiment.load_and_preprocess()
     modelling_ready_datasets = experiment.extract_features(preprocessed_datasets)
 
+    # --- Feature selection ---
     X_initial = modelling_ready_datasets.initial_training
     X_validate = modelling_ready_datasets.validation
     y_train = preprocessed_datasets.initial_training["home_victory"].to_list()
     y_validate = preprocessed_datasets.validation["home_victory"].to_list()
 
     if feature_override is not None:
+        # Use the parent paper's Subset B directly — no SFS needed
         selected_features = feature_override
     else:
         feature_selector = FeatureSelector(
-            X_initial,
-            X_validate,
-            y_train,
-            y_validate,
-            metric="calibration",
+            X_initial, X_validate, y_train, y_validate, metric="calibration",
         )
         selected_features = feature_selector.run_feature_selection(save_results=False)
     X_initial = X_initial[selected_features]
     X_validate = X_validate[selected_features]
 
+    # --- Hyperparameter optimisation (2015-2016 train, 2017 validate) ---
     hpo = CatBoostCalibrationHPO(
-        X_initial,
-        X_validate,
-        y_train,
-        y_validate,
+        X_initial, X_validate, y_train, y_validate,
         num_trials=experiment.num_hpo_trials,
         num_scoring_runs=experiment.num_prediction_runs,
     )
     best_hyperparameters = hpo.run_hpo()
 
+    # --- Test evaluation (retrain on 2015-2017, evaluate on 2018) ---
     X_extended_training = modelling_ready_datasets.extended_training[selected_features]
     X_test = modelling_ready_datasets.test[selected_features]
     y_extended_training = preprocessed_datasets.extended_training["home_victory"].to_list()
     y_test = preprocessed_datasets.test["home_victory"].to_list()
     test_result = evaluate_catboost_calibration(
-        X_extended_training,
-        X_test,
-        y_extended_training,
-        y_test,
+        X_extended_training, X_test, y_extended_training, y_test,
         num_runs=experiment.num_prediction_runs,
         **best_hyperparameters,
     )
 
+    # --- Betting simulation (retrain on 2015-2018, simulate on 2019) ---
     X_final_training = modelling_ready_datasets.final_training[selected_features]
     X_betting = modelling_ready_datasets.betting_simulation[selected_features]
     y_final_training = preprocessed_datasets.final_training["home_victory"].to_list()
@@ -305,14 +327,13 @@ def run_catboost_calibration_side_experiment(
     fixed_bankroll, fixed_value_bets = simulation.run_betting_simulation("fixed")
     kelly_bankroll, kelly_value_bets = simulation.run_betting_simulation("kelly")
 
+    # --- Save results ---
     os.makedirs(output_dir, exist_ok=True)
     fixed_betting_roi = round(
-        100 * (fixed_bankroll[-1] - simulation.INITIAL_BANKROLL) / simulation.INITIAL_BANKROLL,
-        2,
+        100 * (fixed_bankroll[-1] - simulation.INITIAL_BANKROLL) / simulation.INITIAL_BANKROLL, 2,
     )
     kelly_betting_roi = round(
-        100 * (kelly_bankroll[-1] - simulation.INITIAL_BANKROLL) / simulation.INITIAL_BANKROLL,
-        2,
+        100 * (kelly_bankroll[-1] - simulation.INITIAL_BANKROLL) / simulation.INITIAL_BANKROLL, 2,
     )
     with open(os.path.join(output_dir, f"{metric}_driven_catboost_results.json"), "w") as file:
         json.dump(
@@ -333,8 +354,7 @@ def run_catboost_calibration_side_experiment(
                 "kelly_betting_final_balance": kelly_bankroll[-1],
                 "kelly_betting_roi": kelly_betting_roi,
             },
-            file,
-            indent=4,
+            file, indent=4,
         )
     with open(os.path.join(output_dir, "catboost_betting_simulation_data.json"), "w") as file:
         json.dump(
@@ -344,8 +364,7 @@ def run_catboost_calibration_side_experiment(
                 "kelly_betting_bankroll": kelly_bankroll,
                 "kelly_betting_value_bets": kelly_value_bets,
             },
-            file,
-            indent=4,
+            file, indent=4,
         )
 
     return {

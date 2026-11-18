@@ -12,9 +12,10 @@ from simulate import BettingSimulation
 class CatBoostBettingSimulation(BettingSimulation):
     """Run the existing betting rules with a CatBoost classifier.
 
-    Prediction averaging, value-bet detection, fixed stakes, and fractional
-    Kelly staking are inherited from ``BettingSimulation``. CatBoost metrics
-    and betting results are written to a dedicated output directory.
+    All core betting logic — value-bet detection, fixed stakes, and fractional
+    Kelly staking — is inherited from BettingSimulation unchanged. This subclass
+    only overrides model training and result saving so outputs go to the CatBoost
+    output directory rather than the parent paper's output directory.
     """
 
     def __init__(
@@ -29,6 +30,7 @@ class CatBoostBettingSimulation(BettingSimulation):
         output_dir: str = os.path.join(".", "data", "output", "catboost"),
         num_runs: int = 1,
     ):
+        # Pass "catboost" as the model name so the parent class routes correctly
         super().__init__(
             optimal_model="catboost",
             optimal_features=optimal_features,
@@ -51,7 +53,7 @@ class CatBoostBettingSimulation(BettingSimulation):
         self.output_dir = output_dir
 
     def train_model(self, random_state: int = 0):
-        """Fit CatBoost on the final training data using the tuned parameters."""
+        """Fit CatBoost on the final training data using the tuned hyperparameters."""
         try:
             from catboost import CatBoostClassifier
         except ImportError as exc:  # pragma: no cover
@@ -63,6 +65,7 @@ class CatBoostBettingSimulation(BettingSimulation):
         model_kwargs.setdefault("loss_function", "Logloss")
         model_kwargs.setdefault("verbose", False)
         model_kwargs.setdefault("allow_writing_files", False)
+        # Each run uses a different seed — predictions are averaged across runs
         model_kwargs["random_seed"] = random_state
 
         model = CatBoostClassifier(**model_kwargs)
@@ -70,7 +73,7 @@ class CatBoostBettingSimulation(BettingSimulation):
         return model
 
     def record_metrics(self) -> Dict[str, float]:
-        """Record CatBoost accuracy and calibration without touching parent outputs."""
+        """Record CatBoost calibration and accuracy on the betting simulation set."""
         predicted_labels = (self.prediction_array[:, 1] >= 0.5).astype(int)
         metrics = {
             "calibration_score": float(
@@ -96,7 +99,11 @@ class CatBoostBettingSimulation(BettingSimulation):
         final_balance: float,
         test: bool = False,
     ) -> Tuple[Dict[str, Union[float, int]], Dict[str, Union[float, int]]]:
-        """Save simulation summaries in the CatBoost-only output directory."""
+        """Save betting results to the CatBoost output directory.
+
+        Overrides the parent's save_results so CatBoost outputs don't
+        overwrite the parent paper's fixed_betting/ and kelly_betting/ files.
+        """
         roi = 100 * (final_balance - self.INITIAL_BANKROLL) / self.INITIAL_BANKROLL
         num_games = self.prediction_array.shape[0]
         bets_made = 0

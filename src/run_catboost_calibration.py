@@ -3,11 +3,15 @@ import argparse
 from pipeline import NBABettingExperiment
 from catboost_calibration import run_catboost_calibration_side_experiment
 
-# Paper main text Subset B — ORB replaced with ORB% (ORB dropped by covariate shift detection)
+# Calibration-optimal feature subset from the parent paper (Subset B).
+# ORB is replaced with ORB% because ORB is dropped during preprocessing
+# by the Kolmogorov-Smirnov covariate shift test.
 SUBSET_B_FEATURES = ['3P', 'BLK', 'FT%', 'ORB%', 'AST%', 'previous_win_pct']
 
 
 def main():
+    # CLI arguments let us override data years and HPO budget without editing code.
+    # Defaults match the parent paper's exact splits.
     parser = argparse.ArgumentParser(
         description="Run a standalone CatBoost calibration benchmark using the repo's existing data splits."
     )
@@ -20,6 +24,8 @@ def main():
     parser.add_argument("--output-dir", default="./data/output/catboost")
     args = parser.parse_args()
 
+    # NBABettingExperiment handles all data loading, preprocessing, and split management.
+    # It is shared with the parent paper's pipeline to guarantee identical data splits.
     experiment = NBABettingExperiment(
         initial_training_years=args.initial_training_years,
         validation_years=args.validation_years,
@@ -29,6 +35,8 @@ def main():
         num_prediction_runs=args.num_scoring_runs,
     )
 
+    # Run the full CatBoost pipeline: HPO → test evaluation → betting simulation.
+    # feature_override bypasses the SFS feature selection step and uses Subset B directly.
     result = run_catboost_calibration_side_experiment(
         experiment,
         metric="calibration",
