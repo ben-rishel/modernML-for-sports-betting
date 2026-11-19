@@ -60,10 +60,14 @@ poetry run python src/run_rnn.py --num-hpo-trials 10 --evaluations-per-trial 20 
 
 2. **Install dependencies** (requires [Poetry](https://python-poetry.org/)):
    ```bash
+   pipx install poetry
+   ```
+   
+   ```bash
    poetry install
    ```
 
-3. **Run a pipeline** — see commands above.
+4. **Run a pipeline** — see commands above.
 
 ---
 
