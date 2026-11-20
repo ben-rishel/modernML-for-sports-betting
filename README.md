@@ -96,6 +96,7 @@ poetry run python src/run_rnn.py --num-hpo-trials 10 --evaluations-per-trial 20 
    poetry env use "$(command -v python3.12)"
    ```
 
+   **Install Dependencies**
    ```bash
    poetry install
    ```
