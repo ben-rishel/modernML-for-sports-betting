@@ -62,7 +62,12 @@ poetry run python src/run_rnn.py --num-hpo-trials 10 --evaluations-per-trial 20 
    ```bash
    python -m pip install --user --upgrade pipx
    python -m pipx ensurepath
-   pipx install poetry
+   ```
+   
+   Close and reopen your editor/terminal.
+   
+   ```bash
+   pipx install poetry==2.4.2
    poetry --version
    ```
    
