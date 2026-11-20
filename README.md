@@ -58,24 +58,66 @@ poetry run python src/run_rnn.py --num-hpo-trials 10 --evaluations-per-trial 20 
    cd modernML-for-sports-betting
    ```
 
-2. **Install dependencies** (requires [Poetry](https://python-poetry.org/)):
+2. **Install Python 3.12** (Python 3.10–3.12 is supported; Python 3.13 is intentionally excluded because of dependency compatibility issues):
+
+   **Windows:**
+   ```powershell
+   winget install --id Python.Python.3.12 --exact --source winget
+   py -3.12 --version
+   ```
+
+   **macOS/Linux:** install Python 3.12 with your system package manager or a version manager such as pyenv, then verify:
+   ```bash
+   python3.12 --version
+   ```
+
+3. **Install and configure Poetry** (requires [Poetry](https://python-poetry.org/)):
    ```bash
    python -m pip install --user --upgrade pipx
    python -m pipx ensurepath
    ```
-   
-   Close and reopen your editor/terminal.
-   
+
+   Close and reopen your editor/terminal, then run:
+
    ```bash
    pipx install poetry==2.4.2
    poetry --version
    ```
-   
+
+   Select the Python 3.12 interpreter before installing dependencies:
+
+   **Windows:**
+   ```powershell
+   poetry env use (py -3.12 -c "import sys; print(sys.executable)")
+   ```
+
+   **macOS/Linux:**
+   ```bash
+   poetry env use "$(command -v python3.12)"
+   ```
+
    ```bash
    poetry install
    ```
 
+   If you previously created a broken environment, remove it and reinstall:
+
+   ```bash
+   poetry env remove --all
+   poetry install
+   ```
+
+   On Windows, if virtualenv reports `WinError 5: Access is denied`, close other terminals and VS Code instances, clear its cache, and recreate the environment:
+
+   ```powershell
+   Remove-Item -Recurse -Force "$env:LOCALAPPDATA\pypa\virtualenv\Cache" -ErrorAction SilentlyContinue
+   poetry env remove --all
+   poetry env use (py -3.12 -c "import sys; print(sys.executable)")
+   poetry install
+   ```
+
 4. **Run a pipeline** — see commands above.
+
 
 ---
 
